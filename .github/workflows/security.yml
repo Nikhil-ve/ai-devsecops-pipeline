@@ -39,13 +39,12 @@ jobs:
     ##################################
 
     - name: Trivy Filesystem Scan
-      uses: aquasecurity/trivy-action@0.28.0
-      with:
-        scan-type: fs
-        scan-ref: app
-        format: json
-        output: trivy.json
-
+  uses: aquasecurity/trivy-action@master
+  with:
+    scan-type: fs
+    scan-ref: app
+    format: json
+    output: trivy.json
     ##################################
     # CHECKOV
     ##################################
