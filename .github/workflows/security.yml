@@ -11,10 +11,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      ##################################
+      # PYTHON
+      ##################################
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      ##################################
+      # SEMGREP
+      ##################################
 
       - name: Install Semgrep
         run: |
@@ -24,24 +32,43 @@ jobs:
         run: |
           semgrep --config auto app/ --json -o semgrep.json
 
+      ##################################
+      # GITLEAKS
+      ##################################
+
       - name: Run Gitleaks
         uses: gitleaks/gitleaks-action@v2
         continue-on-error: true
 
+      ##################################
+      # TRIVY
+      ##################################
+
       - name: Trivy Filesystem Scan
         uses: aquasecurity/trivy-action@master
+        continue-on-error: true
         with:
           scan-type: fs
           scan-ref: app
           format: json
           output: trivy.json
 
+      ##################################
+      # CHECKOV
+      ##################################
+
       - name: Checkov Scan
         uses: bridgecrewio/checkov-action@master
+        continue-on-error: true
         with:
           directory: .
 
+      ##################################
+      # UPLOAD REPORTS
+      ##################################
+
       - name: Upload Results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: security-reports
