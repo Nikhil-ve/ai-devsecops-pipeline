@@ -9,58 +9,40 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.11"
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-    ##################################
-    # SEMGREP
-    ##################################
+      - name: Install Semgrep
+        run: |
+          pip install semgrep
 
-    - name: Install Semgrep
-      run: pip install semgrep
+      - name: Run Semgrep
+        run: |
+          semgrep --config auto app/ --json -o semgrep.json
 
-    - name: Run Semgrep
-      run: |
-        semgrep --config auto app/ --json -o semgrep.json
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
 
-    ##################################
-    # GITLEAKS
-    ##################################
+      - name: Trivy Filesystem Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: app
+          format: json
+          output: trivy.json
 
-    - name: Run Gitleaks
-      uses: gitleaks/gitleaks-action@v2
+      - name: Checkov Scan
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: .
 
-    ##################################
-    # TRIVY
-    ##################################
-
-    - name: Trivy Filesystem Scan
-  uses: aquasecurity/trivy-action@master
-  with:
-    scan-type: fs
-    scan-ref: app
-    format: json
-    output: trivy.json
-    ##################################
-    # CHECKOV
-    ##################################
-
-    - name: Checkov Scan
-      uses: bridgecrewio/checkov-action@master
-      with:
-        directory: .
-
-    ##################################
-    # UPLOAD RESULTS
-    ##################################
-
-    - name: Upload Results
-      uses: actions/upload-artifact@v4
-      with:
-        name: security-reports
-        path: |
-          *.json
+      - name: Upload Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: |
+            *.json
