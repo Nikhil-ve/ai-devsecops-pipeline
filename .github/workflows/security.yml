@@ -9,20 +9,26 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
 
-      ##################################
+      ####################################################
+      # CHECKOUT
+      ####################################################
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      ####################################################
       # PYTHON
-      ##################################
+      ####################################################
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      ##################################
-      # SEMGREP
-      ##################################
+      ####################################################
+      # SEMGREP (SAST)
+      ####################################################
 
       - name: Install Semgrep
         run: |
@@ -30,19 +36,21 @@ jobs:
 
       - name: Run Semgrep
         run: |
-          semgrep --config auto app/ --json -o semgrep.json
+          semgrep --config auto app/ \
+          --json \
+          -o semgrep.json
 
-      ##################################
-      # GITLEAKS
-      ##################################
+      ####################################################
+      # GITLEAKS (SECRET SCANNING)
+      ####################################################
 
       - name: Run Gitleaks
         uses: gitleaks/gitleaks-action@v2
         continue-on-error: true
 
-      ##################################
-      # TRIVY
-      ##################################
+      ####################################################
+      # TRIVY FILESYSTEM SCAN
+      ####################################################
 
       - name: Trivy Filesystem Scan
         uses: aquasecurity/trivy-action@master
@@ -53,9 +61,9 @@ jobs:
           format: json
           output: trivy.json
 
-      ##################################
-      # CHECKOV
-      ##################################
+      ####################################################
+      # CHECKOV (IAC SCAN)
+      ####################################################
 
       - name: Checkov Scan
         uses: bridgecrewio/checkov-action@master
@@ -63,11 +71,43 @@ jobs:
         with:
           directory: .
 
-      ##################################
-      # UPLOAD REPORTS
-      ##################################
+      ####################################################
+      # BUILD DOCKER IMAGE
+      ####################################################
 
-      - name: Upload Results
+      - name: Build Juice Shop Image
+        run: |
+          docker build -t juice-shop ./app
+
+      ####################################################
+      # TRIVY IMAGE SCAN
+      ####################################################
+
+      - name: Trivy Image Scan
+        uses: aquasecurity/trivy-action@master
+        continue-on-error: true
+        with:
+          image-ref: juice-shop
+          format: json
+          output: image-trivy.json
+
+      ####################################################
+      # SBOM GENERATION
+      ####################################################
+
+      - name: Install Syft
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+
+      - name: Generate SBOM
+        run: |
+          syft juice-shop -o cyclonedx-json=sbom.json
+
+      ####################################################
+      # UPLOAD REPORTS
+      ####################################################
+
+      - name: Upload Security Reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
