@@ -9,33 +9,26 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Checkout
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # Python
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # Semgrep
       - name: Install Semgrep
         run: pip install semgrep
 
       - name: Run Semgrep
         continue-on-error: true
         run: |
-          semgrep --config auto . \
-            --json \
-            -o semgrep.json
+          semgrep --config auto . --json -o semgrep.json
 
-      # Gitleaks
       - name: Run Gitleaks
         uses: gitleaks/gitleaks-action@v2
         continue-on-error: true
 
-      # Trivy Filesystem Scan
       - name: Trivy Filesystem Scan
         uses: aquasecurity/trivy-action@master
         continue-on-error: true
@@ -45,19 +38,16 @@ jobs:
           format: json
           output: trivy.json
 
-      # Checkov
       - name: Checkov Scan
         uses: bridgecrewio/checkov-action@master
         continue-on-error: true
         with:
           directory: .
 
-      # Docker Build
       - name: Build Juice Shop Image
         run: |
           docker build -t juice-shop ./app
 
-      # Trivy Image Scan
       - name: Trivy Image Scan
         uses: aquasecurity/trivy-action@master
         continue-on-error: true
@@ -66,17 +56,14 @@ jobs:
           format: json
           output: image-trivy.json
 
-      # Install Syft
       - name: Install Syft
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
 
-      # Generate SBOM
       - name: Generate SBOM
         run: |
           syft juice-shop -o cyclonedx-json=sbom.json
 
-      # Upload Reports
       - name: Upload Security Reports
         uses: actions/upload-artifact@v4
         with:
@@ -95,4 +82,20 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      -
+      - name: Create ZAP Output Folder
+        run: mkdir -p zap-output
+
+      - name: Run OWASP ZAP Baseline Scan
+        run: |
+          docker run --rm \
+            -v ${{ github.workspace }}/zap-output:/zap/wrk \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py \
+            -t https://demo.testfire.net \
+            -J zap-report.json
+
+      - name: Upload ZAP Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-report
+          path: zap-output
