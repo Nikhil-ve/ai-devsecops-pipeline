@@ -16,29 +16,48 @@ jobs:
       with:
         python-version: "3.11"
 
+    ##################################
+    # SEMGREP
+    ##################################
+
     - name: Install Semgrep
       run: pip install semgrep
 
     - name: Run Semgrep
       run: |
-        semgrep --config auto ./app --json -o semgrep.json
+        semgrep --config auto app/ --json -o semgrep.json
+
+    ##################################
+    # GITLEAKS
+    ##################################
 
     - name: Run Gitleaks
       uses: gitleaks/gitleaks-action@v2
+
+    ##################################
+    # TRIVY
+    ##################################
 
     - name: Trivy Filesystem Scan
       uses: aquasecurity/trivy-action@0.28.0
       with:
         scan-type: fs
-        scan-ref: .
+        scan-ref: app
         format: json
         output: trivy.json
+
+    ##################################
+    # CHECKOV
+    ##################################
 
     - name: Checkov Scan
       uses: bridgecrewio/checkov-action@master
       with:
         directory: .
-        output_format: json
+
+    ##################################
+    # UPLOAD RESULTS
+    ##################################
 
     - name: Upload Results
       uses: actions/upload-artifact@v4
