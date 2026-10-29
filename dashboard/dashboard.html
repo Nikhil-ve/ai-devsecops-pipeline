@@ -1,43 +1,171 @@
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-<title>PipelineFortress Dashboard</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PipelineFortress Dashboard</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      background: #f4f7fb;
+      color: #1f2937;
+    }
+    .container {
+      max-width: 1080px;
+      margin: 32px auto;
+      padding: 24px;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #0f172a;
+      color: white;
+      padding: 22px 28px;
+      border-radius: 12px;
+      margin-bottom: 24px;
+    }
+    .status-pill {
+      display: inline-block;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: #34d399;
+      color: #062d1f;
+      font-weight: bold;
+    }
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .card {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+      padding: 18px;
+    }
+    .metric {
+      font-size: 2rem;
+      font-weight: bold;
+      margin: 8px 0;
+    }
+    .label {
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #64748b;
+    }
+    .two-col {
+      display: grid;
+      grid-template-columns: 1.3fr 1fr;
+      gap: 24px;
+      margin-top: 24px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+    }
+    th, td {
+      text-align: left;
+      padding: 12px 16px;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    th {
+      background: #e2e8f0;
+    }
+    ul {
+      padding-left: 18px;
+      margin: 12px 0 0;
+    }
+    li {
+      margin-bottom: 8px;
+    }
+    .success { color: #047857; font-weight: bold; }
+    .warning { color: #b45309; font-weight: bold; }
+  </style>
 </head>
 <body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1>PipelineFortress Dashboard</h1>
+        <div id="updated">Last updated: --</div>
+      </div>
+      <div class="status-pill" id="status">PASS</div>
+    </div>
 
-<h1>Security Metrics Dashboard</h1>
+    <div class="kpis" id="kpis"></div>
 
-<table border="1">
-<tr>
-<th>Tool</th>
-<th>Findings</th>
-</tr>
+    <div class="two-col">
+      <div class="card">
+        <h2>Stage outcomes</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Stage</th>
+              <th>Status</th>
+              <th>Evidence</th>
+            </tr>
+          </thead>
+          <tbody id="stage-table"></tbody>
+        </table>
+      </div>
 
-<tr>
-<td>Semgrep</td>
-<td>15</td>
-</tr>
+      <div class="card">
+        <h2>Key controls</h2>
+        <ul>
+          <li>Semgrep required for code vulnerabilities.</li>
+          <li>Gitleaks blocks new secret leakage.</li>
+          <li>Trivy enforces critical/high image and filesystem rules.</li>
+          <li>Checkov validates infrastructure hardening.</li>
+          <li>AI triage uses redaction + evidence-based rules.</li>
+          <li>Policy gate fails on threshold breaches.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
 
-<tr>
-<td>Gitleaks</td>
-<td>8</td>
-</tr>
+  <script>
+    fetch('metrics.json')
+      .then(response => response.json())
+      .then(data => {
+        const p = data.pipeline;
+        document.getElementById('updated').textContent = 'Last updated: ' + new Date(p.lastUpdated).toLocaleString();
+        document.getElementById('status').textContent = p.status.toUpperCase();
+        document.getElementById('status').className = 'status-pill ' + (p.status === 'pass' ? 'success' : 'warning');
 
-<tr>
-<td>Trivy</td>
-<td>20</td>
-</tr>
+        const cards = [
+          ['Coverage', p.coverage + '%'],
+          ['Critical', p.critical],
+          ['High', p.high],
+          ['Medium', p.medium],
+          ['Secrets leaked', p.secretsLeaked],
+          ['Review accuracy', p.firstReviewSuccessRate + '%']
+        ];
 
-<tr>
-<td>Checkov</td>
-<td>5</td>
-</tr>
+        document.getElementById('kpis').innerHTML = cards.map(([label, value]) => `
+          <div class="card">
+            <div class="label">${label}</div>
+            <div class="metric">${value}</div>
+          </div>
+        `).join('');
 
-<tr>
-<td>ZAP</td>
-<td>10</td>
-</tr>
-
-</table>
-
+        const rows = data.stages.map(stage => `
+          <tr>
+            <td>${stage.name}</td>
+            <td class="${stage.status === 'pass' ? 'success' : 'warning'}">${stage.status.toUpperCase()}</td>
+            <td>${stage.evidence}</td>
+          </tr>
+        `).join('');
+        document.getElementById('stage-table').innerHTML = rows;
+      })
+      .catch(error => {
+        document.getElementById('updated').textContent = 'Dashboard data unavailable';
+        console.error(error);
+      });
+  </script>
 </body>
 </html>
