@@ -4,11 +4,11 @@
     "label": "TRUE_POSITIVE"
   },
   {
-    "finding": "Secret Exposure",
+    "finding": "Hardcoded Secret",
     "label": "TRUE_POSITIVE"
   },
   {
-    "finding": "Informational Banner",
+    "finding": "Information Disclosure",
     "label": "FALSE_POSITIVE"
   }
 ]

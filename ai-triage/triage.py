@@ -1,30 +1,27 @@
-REPORTS = [
+import json
+import os
+
+print("=== PipelineFortress AI Triage ===")
+
+files = [
     "semgrep.json",
     "trivy.json",
-    "image-trivy.json",
-    "zap-report.json"
+    "image-trivy.json"
 ]
 
-print("=== AI TRIAGE REPORT ===")
+found = False
 
-for report in REPORTS:
-    print(f"Review required: {report}")
+for file in files:
+    if os.path.exists(file):
+        print(f"[FOUND] {file}")
+        found = True
+    else:
+        print(f"[MISSING] {file}")
 
-print("\nPriority Findings")
-
-print("""
-1. SQL Injection
-2. Hardcoded Secrets
-3. Vulnerable Dependencies
-4. XSS
-5. Exposed Tokens
-""")
-
-print("\nSuggested Fixes")
-
-print("""
-- Remove hardcoded credentials
-- Upgrade vulnerable packages
-- Use parameterized queries
-- Validate user input
-""")
+if not found:
+    print("No scanner reports available for analysis")
+else:
+    print("\nEvidence Based Findings")
+    print("- Review HIGH and CRITICAL findings")
+    print("- Validate secrets before remediation")
+    print("- Human review required")

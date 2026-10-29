@@ -16,6 +16,6 @@ def redact_text(text):
             pattern,
             "[REDACTED]",
             text,
-            flags=re.DOTALL | re.IGNORECASE
+            flags=re.IGNORECASE | re.DOTALL
         )
     return text
