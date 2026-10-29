@@ -1,15 +1,34 @@
-name: Security Pipeline
+﻿name: Security Pipeline
 
 on:
   push:
+    branches:
+      - main
+      - master
+  pull_request:
   workflow_dispatch:
 
-jobs:
-  security-scan:
-    runs-on: ubuntu-latest
+permissions:
+  contents: read
 
+jobs:
+  source-validation:
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate repository layout
+        run: |
+          test -d app
+          test -f app/Dockerfile
+          echo "Repository structure is valid"
+
+  sast:
+    needs: source-validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Python
@@ -18,89 +37,195 @@ jobs:
           python-version: "3.11"
 
       - name: Install Semgrep
-        run: |
-          pip install semgrep
+        run: pip install --upgrade pip semgrep
 
       - name: Run Semgrep
-        continue-on-error: true
         run: |
-          semgrep --config auto . --json -o semgrep.json
+          semgrep --config auto --error --json --output semgrep.json .
 
-      - name: Run Gitleaks
+      - name: Upload Semgrep report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-report
+          path: semgrep.json
+          if-no-files-found: ignore
+
+  secrets:
+    needs: source-validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Scan for secrets
         uses: gitleaks/gitleaks-action@v2
-        continue-on-error: true
+        with:
+          args: detect --source . --no-banner --redact --report-format json --report-path gitleaks.json
 
-      - name: Trivy Filesystem Scan
-        uses: aquasecurity/trivy-action@master
-        continue-on-error: true
+      - name: Upload Gitleaks report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-report
+          path: gitleaks.json
+          if-no-files-found: ignore
+
+  trivy-fs:
+    needs: source-validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.24.0
         with:
           scan-type: fs
           scan-ref: .
+          severity: CRITICAL,HIGH
           format: json
-          output: trivy.json
+          output: trivy-fs.json
+          exit-code: "1"
 
-      - name: Checkov Scan
-        uses: bridgecrewio/checkov-action@master
-        continue-on-error: true
+      - name: Upload Trivy FS report
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          directory: .
+          name: trivy-fs-report
+          path: trivy-fs.json
+          if-no-files-found: ignore
 
-      - name: Build Juice Shop Image
+  iac-scan:
+    needs: source-validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Checkov
+        run: pip install checkov
+
+      - name: Run Checkov
         run: |
-          docker build -t juice-shop ./app
+          checkov --directory . --framework dockerfile,kubernetes,terraform --quiet --output json --output-file checkov.json
 
-      - name: Trivy Image Scan
-        uses: aquasecurity/trivy-action@master
-        continue-on-error: true
+      - name: Upload Checkov report
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          image-ref: juice-shop
+          name: checkov-report
+          path: checkov.json
+          if-no-files-found: ignore
+
+  container-scan:
+    needs: source-validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Juice Shop image
+        run: docker build -t juice-shop:local ./app
+
+      - name: Run Trivy image scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: image
+          image-ref: juice-shop:local
+          severity: CRITICAL,HIGH
           format: json
           output: image-trivy.json
+          exit-code: "1"
 
       - name: Install Syft
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
 
       - name: Generate SBOM
-        run: |
-          syft juice-shop -o cyclonedx-json=sbom.json
+        run: syft juice-shop:local -o cyclonedx-json=sbom.json
 
-      - name: Upload Security Reports
+      - name: Upload container reports
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: security-reports
+          name: container-reports
           path: |
-            semgrep.json
-            trivy.json
             image-trivy.json
             sbom.json
+          if-no-files-found: ignore
 
-  zap-scan:
+  ai-triage:
+    needs:
+      - sast
+      - secrets
+      - trivy-fs
+      - iac-scan
+      - container-scan
+    if: always()
     runs-on: ubuntu-latest
-    needs: security-scan
-
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Create ZAP Output Folder
-        run: |
-          mkdir -p zap-output
-          chmod 777 zap-output
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-      - name: Run OWASP ZAP Baseline Scan
-        continue-on-error: true
-        run: |
-          docker run --rm \
-            -u root \
-            -v $(pwd)/zap-output:/zap/wrk \
-            ghcr.io/zaproxy/zaproxy:stable \
-            zap-baseline.py \
-            -t https://demo.testfire.net \
-            -r zap-report.html
+      - name: Download security reports
+        uses: actions/download-artifact@v4
+        with:
+          path: security-reports
 
-      - name: Upload ZAP Report
+      - name: Install AI SDK
+        run: pip install --upgrade pip openai
+
+      - name: Run AI triage
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: python ai-triage/summarize.py --reports-dir security-reports
+
+      - name: Upload AI summary
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: zap-report
-          path: zap-output
+          name: ai-security-summary
+          path: security-report.md
+          if-no-files-found: ignore
+
+  policy-gate:
+    needs:
+      - ai-triage
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download reports and summary
+        uses: actions/download-artifact@v4
+        with:
+          path: final-reports
+
+      - name: Enforce policy thresholds
+        run: |
+          python ai-triage/policy_gate.py \
+            --reports-dir final-reports \
+            --summary final-reports/ai-security-summary/security-report.md \
+            --max-critical 0 \
+            --max-high 3 \
+            --max-medium 10
+
+      - name: Publish dashboard artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-dashboard
+          path: dashboard/
+          if-no-files-found: ignore

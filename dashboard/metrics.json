@@ -1,0 +1,24 @@
+{
+  "pipeline": {
+    "name": "AI DevSecOps Pipeline",
+    "status": "pass",
+    "lastUpdated": "2026-10-29T17:56:00Z",
+    "coverage": 82,
+    "critical": 0,
+    "high": 2,
+    "medium": 6,
+    "low": 12,
+    "secretsLeaked": 0,
+    "falsePositiveRate": 12,
+    "meanTimeToRemediateDays": 3.4,
+    "firstReviewSuccessRate": 78
+  },
+  "stages": [
+    {"name": "Source validation", "status": "pass", "evidence": "layout checks enabled"},
+    {"name": "Static analysis", "status": "pass", "evidence": "Semgrep enforced"},
+    {"name": "Secrets scanning", "status": "pass", "evidence": "Gitleaks enabled"},
+    {"name": "IaC and image scanning", "status": "pass", "evidence": "Checkov + Trivy + SBOM"},
+    {"name": "AI triage", "status": "pass", "evidence": "redaction + evidence checks"},
+    {"name": "Policy gate", "status": "pass", "evidence": "threshold enforcement"}
+  ]
+}
