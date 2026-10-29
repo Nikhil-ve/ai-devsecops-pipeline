@@ -1,0 +1,12 @@
+{
+  "tool_counts": {
+    "semgrep": 5,
+    "trivy": 12,
+    "checkov": 3,
+    "gitleaks": 6,
+    "zap": 19
+  },
+  "critical": 2,
+  "high": 7,
+  "medium": 11
+}

@@ -1,0 +1,14 @@
+[
+  {
+    "finding": "SQL Injection",
+    "label": "TRUE_POSITIVE"
+  },
+  {
+    "finding": "Secret Exposure",
+    "label": "TRUE_POSITIVE"
+  },
+  {
+    "finding": "Informational Banner",
+    "label": "FALSE_POSITIVE"
+  }
+]
