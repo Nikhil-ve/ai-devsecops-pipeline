@@ -2,7 +2,8 @@ name: Security Pipeline
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   pull_request:
   workflow_dispatch:
 
@@ -17,8 +18,10 @@ env:
 jobs:
   preflight:
     runs-on: ubuntu-latest
+
     outputs:
       should_scan: ${{ steps.filter.outputs.should_scan }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -29,6 +32,7 @@ jobs:
   secrets-scan:
     needs: preflight
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -38,11 +42,11 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         with:
           args: detect --source . --no-banner --redact --report-format sarif --report-path gitleaks.sarif
-        continue-on-error: false
 
   sast:
     needs: preflight
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -51,45 +55,77 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install Semgrep
-        run: pip install semgrep
-
-      - name: Run Semgrep
         run: |
-          semgrep --config auto --error --json . > semgrep.json || true
-          python - <<'PY'
+          pip install semgrep
+
+      - name: Run Semgrep Gate
+        run: |
+          semgrep --config auto --json . > semgrep.json || true
+
+          python << 'PY'
           import json
+
           try:
-              data = json.load(open("semgrep.json"))
+              with open("semgrep.json", "r") as f:
+                  data = json.load(f)
           except Exception:
-              print("No semgrep results produced")
+              print("No Semgrep results produced")
               raise SystemExit(0)
+
           findings = data.get("results", [])
-          critical = sum(1 for f in findings if f.get("extra", {}).get("severity") in ("ERROR","CRITICAL"))
-          high = sum(1 for f in findings if f.get("extra", {}).get("severity") in ("WARNING","HIGH"))
-          print(f"semgrep findings: critical={critical} high={high}")
+
+          critical = sum(
+              1 for f in findings
+              if str(f.get("extra", {}).get("severity", "")).upper()
+              in ["CRITICAL", "ERROR"]
+          )
+
+          high = sum(
+              1 for f in findings
+              if str(f.get("extra", {}).get("severity", "")).upper()
+              in ["HIGH", "WARNING"]
+          )
+
+          print(f"Critical={critical}")
+          print(f"High={high}")
+
           if critical > 0 or high > 0:
               raise SystemExit(1)
           PY
 
+      - name: Upload Semgrep Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-report
+          path: semgrep.json
+
   dependency-scan:
     needs: preflight
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run Trivy filesystem scan
+      - name: Run Trivy Filesystem Scan
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
           scan-ref: .
           format: json
           output: trivy.json
-          exit-code: 1
           severity: HIGH,CRITICAL
+          exit-code: 1
+
+      - name: Upload Trivy Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report
+          path: trivy.json
 
   iac-scan:
     needs: preflight
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -101,68 +137,97 @@ jobs:
           output_format: cli
           quiet: false
           download_external_modules: true
-        continue-on-error: false
 
   image-scan:
-    needs: [preflight, dependency-scan]
+    needs:
+      - dependency-scan
+      - iac-scan
+
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build image
-        run: docker build -t juice-shop ./app
+      - name: Build Docker Image
+        run: |
+          docker build -t juice-shop:v20.3.0 ./app
 
-      - name: Trivy image scan
+      - name: Run Trivy Image Scan
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: juice-shop
+          image-ref: juice-shop:v20.3.0
           format: json
           output: image-trivy.json
-          exit-code: 1
           severity: HIGH,CRITICAL
+          exit-code: 1
+
+      - name: Upload Image Scan Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-trivy-report
+          path: image-trivy.json
 
   sbom:
-    needs: [preflight, image-scan]
+    needs: image-scan
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Syft
-        run: curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
 
       - name: Generate SBOM
-        run: syft dir:. -o cyclonedx-json=sbom.json
+        run: |
+          syft dir:. -o cyclonedx-json=sbom.json
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
         with:
           name: sbom
           path: sbom.json
 
   app-scan:
-    needs: [preflight, image-scan]
+    needs:
+      - image-scan
+
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create ZAP output folder
-        run: mkdir -p zap-output
+      - name: Create ZAP Output Folder
+        run: |
+          mkdir -p zap-output
 
-      - name: Run OWASP ZAP baseline
+      - name: Run OWASP ZAP Baseline
         run: |
           docker run --rm \
             -v "$PWD/zap-output:/zap/wrk" \
             ghcr.io/zaproxy/zaproxy:stable \
-            zap-baseline.py -t https://demo.testfire.net -r zap-report.html || true
+            zap-baseline.py \
+            -t https://demo.testfire.net \
+            -r zap-report.html
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload ZAP Report
+        uses: actions/upload-artifact@v4
         with:
           name: zap-report
           path: zap-output
 
   ai-triage:
-    needs: [secrets-scan, sast, dependency-scan, iac-scan, image-scan, sbom, app-scan]
-    if: always()
+    needs:
+      - secrets-scan
+      - sast
+      - dependency-scan
+      - iac-scan
+      - image-scan
+      - sbom
+      - app-scan
+
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -170,14 +235,13 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install dependencies
+      - name: Install Python Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install openai
 
-      - name: Run honest triage
+      - name: Run AI Triage
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           python ai-triage/triage.py
-        continue-on-error: false
